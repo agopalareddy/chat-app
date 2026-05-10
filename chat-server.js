@@ -13,7 +13,7 @@ const server = http.createServer((req, res) => {
     }
     fs.readFile("client.html", (err, data) => {
         if (err) return res.writeHead(500);
-        res.writeHead(200);
+        res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(data);
     });
 });
