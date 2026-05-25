@@ -71,7 +71,7 @@ const server = http.createServer((req, res) => {
 
     // Serve static files
     if (url === '/style.css' || url === '/client.js') {
-        const filePath = url.substring(1);
+        const filePath = path.join(__dirname, url.substring(1));
         fs.readFile(filePath, (err, data) => {
             if (err) {
                 res.writeHead(404);
@@ -86,7 +86,7 @@ const server = http.createServer((req, res) => {
 
     // Serve client.html
     if (url === '/' || url === '/client.html') {
-        fs.readFile('client.html', (err, data) => {
+        fs.readFile(path.join(__dirname, 'client.html'), (err, data) => {
             if (err) {
                 res.writeHead(500);
                 return res.end('Server error');
