@@ -1,13 +1,19 @@
 {
   "name": "socketio-chat-app",
-  "version": "1.0.0",
-  "description": "A multi-room chat application using Socket.IO and Node.js.",
+  "version": "2.0.0",
+  "description": "A polished multi-room chat application with Socket.IO, private messaging, typing indicators, and mobile support.",
   "main": "chat-server.js",
   "scripts": {
-    "start": "node chat-server.js"
+    "start": "node chat-server.js",
+    "dev": "nodemon chat-server.js"
   },
+  "keywords": ["chat", "socket.io", "realtime", "messaging"],
   "dependencies": {
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
   },
   "author": "",
   "license": "ISC"

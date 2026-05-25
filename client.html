@@ -1,775 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-   <meta charset="UTF-8">
-   <title>Chat Application</title>
-   <link rel="stylesheet" href="style.css">
-   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-   <script src="/socket.io/socket.io.js"></script>
-   <script>
-      const socketio = io.connect();
-      const state = {
-         currentRoom: null,
-         nickname: localStorage.getItem('nickname'), // Load from localStorage
-         isRoomCreator: false,
-         currentChat: 'room',
-         activePrivateChats: new Set(),
-         // Add closed chats tracking
-         closedChats: new Set(JSON.parse(localStorage.getItem('closedChats') || '[]'))
-      };
-
-      const replyState = {
-         replyingTo: null,
-         replyingToRoom: null
-      };
-
-      // Initialize on page load
-      window.onload = function () {
-         // Add event listener for nickname input
-         const nicknameInput = document.getElementById('nickname_input');
-         nicknameInput.addEventListener('keypress', function (event) {
-            if (event.key === 'Enter') setNickname();
-         });
-
-         // Add event listener for message input
-         const messageInput = document.getElementById('message_input');
-         messageInput.addEventListener('keypress', function (event) {
-            if (event.key === 'Enter') sendMessage();
-         });
-
-         if (state.nickname) {
-            // Reconnect with stored nickname
-            socketio.emit("set_nickname", state.nickname);
-            toggleVisibility('nickname-form', false);
-            toggleVisibility('chat-interface', true);
-            joinRoom("Lobby", false);
-         }
-      };
-
-      // Add logout function
-      function logout() {
-         if (confirm('Are you sure you want to log out?')) {
-            localStorage.removeItem('nickname');
-            localStorage.removeItem('closedChats'); // Clear closed chats on logout
-            state.nickname = null;
-            state.currentRoom = null;
-            state.isRoomCreator = false;
-            state.currentChat = 'room';
-            state.activePrivateChats.clear();
-            state.closedChats.clear();
-
-            // Clean up UI
-            document.getElementById('chatlog').innerHTML = '';
-            document.getElementById('private-chats').innerHTML = '';
-            document.getElementById('chat-tabs').innerHTML = `
-               <div class="chat-tab active" data-chat="room" onclick="switchChat('room')">Room Chat</div>
-            `;
-
-            // Notify server
-            socketio.emit('logout');
-
-            // Show login form
-            toggleVisibility('chat-interface', false);
-            toggleVisibility('nickname-form', true);
-
-            // Clear input
-            document.getElementById('nickname_input').value = '';
-         }
-      }
-
-      // Socket event handlers
-      const handlers = {
-         nickname_set: (data) => {
-            toggleVisibility('nickname-form', false);
-            toggleVisibility('chat-interface', true);
-
-            // Restore private chats if any exist
-            if (data.privateChats) {
-               data.privateChats.forEach(chat => {
-                  // Only restore if chat wasn't explicitly closed
-                  if (!state.closedChats.has(chat.otherUser)) {
-                     openPrivateChat(chat.otherUser);
-                     const chatContainer = document.getElementById(`private-chat-${chat.otherUser}`);
-                     if (chatContainer) {
-                        chat.messages.forEach(msg => {
-                           appendPrivateMessage(chat.otherUser, {
-                              from: msg.from,
-                              message: msg.message,
-                              timestamp: msg.formattedTime
-                           });
-                        });
-                     }
-                  }
-               });
-            }
-
-            joinRoom("Lobby", false);
-         },
-
-         message_to_client: (data) => {
-            appendMessage('chatlog', data.message, data.messageId, data.from, data.replyTo);
-         },
-
-         update_rooms: (rooms) => {
-            const roomList = document.getElementById("room_list");
-            roomList.innerHTML = "<h3>Available Rooms:</h3>";
-
-            rooms.forEach(room => {
-               const isCurrentRoom = room.name === state.currentRoom;
-               const roomDiv = createRoomElement(room, isCurrentRoom);
-               roomList.appendChild(roomDiv);
-            });
-         },
-
-         update_users: (data) => {
-            const userList = document.getElementById("user_list");
-            userList.innerHTML = "<h3>Users in Room:</h3>";
-
-            data.users.forEach(user => {
-               const userDiv = createUserElement(user, data.roomOwner);
-               userList.appendChild(userDiv);
-            });
-
-            // Show banned and kicked users if user is room owner
-            const bannedList = document.getElementById("banned_users_list");
-            const kickedList = document.getElementById("kicked_users_list");
-
-            if (state.nickname === data.roomOwner) {
-               // Update banned users list
-               if (data.bannedUsers?.length > 0) {
-                  bannedList.innerHTML = "<h4>Banned Users:</h4>";
-                  data.bannedUsers.forEach(user => {
-                     const userDiv = document.createElement('div');
-                     userDiv.className = 'banned-user-item';
-                     userDiv.innerHTML = `
-                        ${user}
-                        <button class="unban-btn" onclick="unbanUser('${user}')">Unban</button>
-                     `;
-                     bannedList.appendChild(userDiv);
-                  });
-                  bannedList.style.display = 'block';
-               } else {
-                  bannedList.style.display = 'none';
-               }
-
-               // Update kicked users list
-               if (Object.keys(data.kickedUsers || {}).length > 0) {
-                  kickedList.innerHTML = "<h4>Kicked Users:</h4>";
-                  Object.entries(data.kickedUsers).forEach(([user, expirationTime]) => {
-                     const remainingTime = Math.ceil((expirationTime - Date.now()) / (60 * 1000));
-                     if (remainingTime > 0) {
-                        const userDiv = document.createElement('div');
-                        userDiv.className = 'banned-user-item';
-                        userDiv.innerHTML = `
-                           ${user} (${remainingTime}m remaining)
-                           <button class="unkick-btn" onclick="unkickUser('${user}')">Unkick</button>
-                        `;
-                        kickedList.appendChild(userDiv);
-                     }
-                  });
-                  kickedList.style.display = 'block';
-               } else {
-                  kickedList.style.display = 'none';
-               }
-            } else {
-               bannedList.style.display = 'none';
-               kickedList.style.display = 'none';
-            }
-         },
-
-         private_message: (data) => {
-            const otherUser = data.from === state.nickname ? data.to : data.from;
-            if (!state.activePrivateChats.has(otherUser)) {
-               openPrivateChat(otherUser);
-            }
-            appendPrivateMessage(otherUser, data);
-         },
-
-         join_room_success: (data) => {
-            const chatlog = document.getElementById("chatlog");
-            chatlog.innerHTML = '';
-
-            if (data.messageHistory?.length) {
-               data.messageHistory.forEach(msg => {
-                  appendMessage('chatlog',
-                     `[${msg.formattedTime}] ${msg.from}: ${msg.message}`,
-                     msg.messageId,
-                     msg.from,
-                     msg.replyTo  // Add this to show replies in history
-                  );
-               });
-            }
-
-            document.getElementById("current_room").textContent = `Current Room: ${data.room}`;
-            chatlog.scrollTop = chatlog.scrollHeight;
-         },
-
-         kicked: (data) => {
-            const remainingTime = Math.ceil((data.expiration - Date.now()) / (60 * 1000));
-            alert(`You have been kicked from ${data.room} for ${remainingTime} minutes`);
-
-            if (state.currentRoom === data.room) {
-               state.currentRoom = null;
-               document.getElementById("chatlog").innerHTML = '';
-               document.getElementById("current_room").textContent = 'Current Room: None';
-
-               // Attempt to join Lobby
-               joinRoom("Lobby", false);
-            }
-         },
-
-         error_message: (data) => {
-            alert(data.message);
-         }
-      };
-
-      // Register all socket events
-      Object.entries(handlers).forEach(([event, handler]) => {
-         socketio.on(event, handler);
-      });
-
-      // Add to socket event handlers
-      socketio.on('banned', function (data) {
-         alert(data.message || `You have been banned from ${data.room}`);
-
-         if (state.currentRoom === data.room) {
-            state.currentRoom = null;
-            document.getElementById("chatlog").innerHTML = '';
-            document.getElementById("current_room").textContent = 'Current Room: None';
-
-            // Attempt to join Lobby
-            joinRoom("Lobby", false);
-         }
-      });
-
-      // Add to socket event handlers
-      socketio.on('private_chat_history', function (data) {
-         const container = document.getElementById(`private-chat-${data.otherUser}`);
-         if (container && data.messages) {
-            data.messages.forEach(msg => {
-               appendPrivateMessage(data.otherUser, {
-                  from: msg.from,
-                  to: msg.to,
-                  message: msg.message,
-                  timestamp: msg.formattedTime,
-                  messageId: msg.messageId,
-                  replyTo: msg.replyTo
-               });
-            });
-            container.scrollTop = container.scrollHeight;
-         }
-      });
-
-      // UI Helper functions
-      function toggleVisibility(id, show) {
-         document.getElementById(id).style.display = show ? 'block' : 'none';
-      }
-
-      // Modify deleteMessage function to handle private messages
-      function deleteMessage(messageId, type = 'room', otherUser = null) {
-         if (confirm('Are you sure you want to delete this message?')) {
-            socketio.emit('delete_message', {
-               messageId,
-               room: state.currentRoom,
-               type,
-               otherUser
-            });
-         }
-      }
-
-      // Modify appendMessage to include delete button conditionally
-      function appendMessage(containerId, message, messageId, from, replyTo = null) {
-         const container = document.getElementById(containerId);
-         const messageDiv = document.createElement('div');
-         messageDiv.className = `message${replyTo ? ' reply' : ''}`;
-         messageDiv.id = `message-${messageId}`;
-
-         let messageContent = '';
-
-         // Add reply indicator if this is a reply
-         if (replyTo) {
-            messageContent += `
-               <div class="reply-indicator" onclick="scrollToMessage('${replyTo.messageId}')">
-                  ↪ Replying to ${replyTo.from}: ${replyTo.preview}
-               </div>
-            `;
-         }
-
-         messageContent += message;
-
-         // Store the actual message text (without timestamp) as a data attribute
-         const messageText = message.split(']: ')[1] || message; // Handle system messages
-         messageDiv.setAttribute('data-message-text', messageText);
-
-         // Add controls (delete and reply buttons)
-         messageContent += `
-            <div class="controls">
-               <button title="Reply" onclick="replyToMessage('${messageId}', '${from}', this.closest('.message'))">
-                  <span class="material-icons">reply</span>
-               </button>
-               ${from === state.nickname || from === 'System' ?
-               `<button title="Delete" onclick="deleteMessage('${messageId}')">
-                     <span class="material-icons">delete</span>
-                  </button>` :
-               ''}
-            </div>
-         `;
-
-         messageDiv.innerHTML = messageContent;
-         container.appendChild(messageDiv);
-         container.scrollTop = container.scrollHeight;
-      }
-
-      // Modify appendPrivateMessage function to include delete button
-      function appendPrivateMessage(user, data) {
-         const container = document.getElementById(`private-chat-${user}`);
-         const messageDiv = document.createElement('div');
-         messageDiv.className = `private-message${data.replyTo ? ' reply' : ''}`;
-         messageDiv.id = `message-${data.messageId}`;  // Use server-provided messageId
-
-         let messageContent = '';
-
-         // Add reply indicator if this is a reply
-         if (data.replyTo) {
-            messageContent += `
-               <div class="reply-indicator" onclick="scrollToMessage('${data.replyTo.messageId}')">
-                  ↪ Replying to ${data.replyTo.from}: ${data.replyTo.preview}
-               </div>
-            `;
-         }
-
-         // Store the actual message text as a data attribute
-         const messageText = data.message;
-         messageDiv.setAttribute('data-message-text', messageText);
-
-         messageContent += `[${data.timestamp}] ${data.from}: ${data.message}`;
-
-         // Add controls for own messages
-         if (data.from === state.nickname) {
-            messageContent += `
-               <div class="controls">
-                  <button title="Reply" onclick="replyToPrivateMessage('${data.messageId}', '${data.from}', this.closest('.private-message'), '${user}')">
-                     <span class="material-icons">reply</span>
-                  </button>
-                  <button title="Delete" onclick="deleteMessage('${data.messageId}', 'private', '${user}')">
-                     <span class="material-icons">delete</span>
-                  </button>
-               </div>
-            `;
-         } else {
-            // Add only reply button for messages from others
-            messageContent += `
-               <div class="controls">
-                  <button title="Reply" onclick="replyToPrivateMessage('${data.messageId}', '${data.from}', this.closest('.private-message'), '${user}')">
-                     <span class="material-icons">reply</span>
-                  </button>
-               </div>
-            `;
-         }
-
-         messageDiv.innerHTML = messageContent;
-         container.appendChild(messageDiv);
-         container.scrollTop = container.scrollHeight;
-      }
-
-      function replyToPrivateMessage(messageId, from, messageElement, otherUser) {
-         const messageText = messageElement.getAttribute('data-message-text');
-
-         replyState.replyingTo = {
-            messageId,
-            from,
-            preview: messageText.substring(0, 30) + (messageText.length > 30 ? '...' : '')
-         };
-         replyState.replyingToRoom = null; // Indicate this is a private chat
-
-         // Show replying indicator
-         const inputContainer = document.querySelector('.message-input-container');
-         let replyingDiv = inputContainer.querySelector('.replying-to');
-
-         if (!replyingDiv) {
-            replyingDiv = document.createElement('div');
-            replyingDiv.className = 'replying-to';
-            inputContainer.insertBefore(replyingDiv, inputContainer.firstChild);
-         }
-
-         replyingDiv.innerHTML = `
-            <span>Replying to ${from}: ${replyState.replyingTo.preview}</span>
-            <button class="cancel-reply" onclick="cancelReply()">
-               <span class="material-icons">close</span>
-            </button>
-         `;
-
-         // Focus the input field after clicking reply
-         document.getElementById('message_input').focus();
-      }
-
-      // Add handler for message_deleted event
-      socketio.on('message_deleted', function (data) {
-         const messageDiv = document.getElementById(`message-${data.messageId}`);
-         if (messageDiv) {
-            messageDiv.remove();
-         }
-      });
-
-      // Chat management functions
-      function sendMessage() {
-         const msgInput = document.getElementById("message_input");
-         const msg = msgInput.value.trim();
-         if (!msg) return;
-
-         // Check if this is a reply
-         const replyData = replyState.replyingTo ? {
-            messageId: replyState.replyingTo.messageId,
-            from: replyState.replyingTo.from,
-            preview: replyState.replyingTo.preview
-         } : null;
-
-         socketio.emit(
-            state.currentChat === 'room' ? "message_to_server" : "private_message",
-            state.currentChat === 'room'
-               ? { message: msg, room: state.currentRoom, replyTo: replyData }
-               : { to: state.currentChat.replace('private-', ''), message: msg, replyTo: replyData }
-         );
-
-         msgInput.value = "";
-         cancelReply(); // Clear reply state after sending
-      }
-
-      function switchChat(chatId) {
-         state.currentChat = chatId;
-         updateChatVisibility(chatId);
-      }
-
-      // Room management functions
-      function joinRoom(roomName, hasPassword, roomOwner) {
-         if (roomName === state.currentRoom) return;
-
-         const password = hasPassword && state.nickname !== roomOwner
-            ? prompt("Enter room password:")
-            : '';
-
-         if (hasPassword && password === null) return;
-
-         state.currentRoom = roomName;
-         state.isRoomCreator = false;
-         socketio.emit("join_room", { room: roomName, password });
-      }
-
-      function createRoom() {
-         const room = document.getElementById("new_room_input").value.trim();
-         const password = document.getElementById("room_password").value;
-
-         if (room) {
-            state.isRoomCreator = true;
-            socketio.emit("create_room", { room, password });
-            document.getElementById("new_room_input").value = "";
-            document.getElementById("room_password").value = "";
-         }
-      }
-
-      // User management functions
-      function setNickname() {
-         const newNickname = document.getElementById("nickname_input").value.trim();
-         if (newNickname) {
-            state.nickname = newNickname;
-            localStorage.setItem('nickname', newNickname); // Store in localStorage
-            socketio.emit("set_nickname", newNickname);
-         }
-      }
-
-      function kickUser(userId) {
-         const duration = prompt("Enter kick duration in minutes (1-1440):", "5");
-         if (!duration) return;  // User cancelled
-
-         const durationNum = parseInt(duration);
-         if (isNaN(durationNum) || durationNum < 1 || durationNum > 1440) {
-            alert("Please enter a valid duration between 1 and 1440 minutes");
-            return;
-         }
-
-         socketio.emit("kick_user", {
-            userId,
-            room: state.currentRoom,
-            duration: durationNum
-         });
-      }
-
-      function banUser(userId) {
-         socketio.emit("ban_user", { userId, room: state.currentRoom });
-      }
-
-      // Helper functions for creating UI elements
-      function createRoomElement(room, isCurrentRoom) {
-         const div = document.createElement('div');
-         div.className = `room${isCurrentRoom ? ' current' : ''}`;
-
-         const nameSpan = document.createElement('span');
-         nameSpan.textContent = room.name;
-         div.appendChild(nameSpan);
-
-         const controlsDiv = document.createElement('div');
-         controlsDiv.className = 'room-controls';
-
-         // Add lock icon if room has password
-         if (room.hasPassword) {
-            const lockIcon = document.createElement('span');
-            lockIcon.className = 'material-icons';
-            lockIcon.textContent = 'lock';
-            lockIcon.title = 'Password Protected';
-            controlsDiv.appendChild(lockIcon);
-         }
-
-         // Add delete button if user is room owner
-         if (room.owner === state.nickname && room.name !== "Lobby") {
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-room-btn';
-            deleteBtn.innerHTML = '<span class="material-icons">delete_outline</span>';
-            deleteBtn.title = 'Delete Room';
-            deleteBtn.onclick = (e) => {
-               e.stopPropagation();
-               if (confirm('Are you sure?')) socketio.emit("delete_room", { room: room.name });
-            };
-            controlsDiv.appendChild(deleteBtn);
-         }
-
-         if (controlsDiv.children.length > 0) {
-            div.appendChild(controlsDiv);
-         }
-
-         div.onclick = () => joinRoom(room.name, room.hasPassword, room.owner);
-         return div;
-      }
-
-      function createUserElement(user, roomOwner) {
-         const div = document.createElement('div');
-         div.className = `user-item${user === state.nickname ? ' current-user' : ''}`;
-         div.innerHTML = user;
-
-         if (state.currentRoom && roomOwner === state.nickname && user !== state.nickname) {
-            const controls = document.createElement('div');
-            controls.innerHTML = `
-               <button title="Kick User" onclick="kickUser('${user}')">
-                  <span class="material-icons">timer_off</span>  <!-- Changed to timer_off icon -->
-               </button>
-               <button title="Ban User" onclick="banUser('${user}')">
-                  <span class="material-icons">block</span>
-               </button>
-            `;
-            div.appendChild(controls);
-         }
-
-         div.onclick = () => user !== state.nickname && openPrivateChat(user);
-         return div;
-      }
-
-      // Private chat functions
-      function openPrivateChat(otherUser) {
-         if (!state.activePrivateChats.has(otherUser)) {
-            state.activePrivateChats.add(otherUser);
-            reopenChat(otherUser); // Remove from closed list when explicitly opened
-
-            // Create new tab
-            const tabsContainer = document.getElementById('chat-tabs');
-            const newTab = document.createElement('div');
-            newTab.className = 'chat-tab';
-            newTab.setAttribute('data-chat', `private-${otherUser}`);
-            newTab.innerHTML = `
-               ${otherUser}
-               <span class="tab-close" onclick="closePrivateChat('${otherUser}', event)">
-                  <span class="material-icons">close</span>
-               </span>
-            `;
-            newTab.onclick = () => switchChat(`private-${otherUser}`);
-            tabsContainer.appendChild(newTab);
-
-            // Create chat container
-            const privateChatsContainer = document.getElementById('private-chats');
-            const newChat = document.createElement('div');
-            newChat.id = `private-chat-${otherUser}`;
-            newChat.className = 'private-chat';
-            privateChatsContainer.appendChild(newChat);
-
-            // Request message history for this private chat
-            socketio.emit('open_private_chat', otherUser);
-         }
-
-         switchChat(`private-${otherUser}`);
-      }
-
-      function closePrivateChat(otherUser, event) {
-         if (event) {
-            event.stopPropagation();
-         }
-
-         const chatTab = document.querySelector(`[data-chat="private-${otherUser}"]`);
-         const chatContainer = document.getElementById(`private-chat-${otherUser}`);
-
-         if (chatTab) chatTab.remove();
-         if (chatContainer) chatContainer.remove();
-
-         state.activePrivateChats.delete(otherUser);
-         // Add to closed chats and persist
-         state.closedChats.add(otherUser);
-         localStorage.setItem('closedChats', JSON.stringify([...state.closedChats]));
-
-         if (state.currentChat === `private-${otherUser}`) {
-            switchChat('room');
-         }
-      }
-
-      function reopenChat(otherUser) {
-         state.closedChats.delete(otherUser);
-         localStorage.setItem('closedChats', JSON.stringify([...state.closedChats]));
-      }
-
-      function updateChatVisibility(chatId) {
-         // Update tabs
-         document.querySelectorAll('.chat-tab').forEach(tab => {
-            tab.classList.remove('active');
-            if (tab.getAttribute('data-chat') === chatId) {
-               tab.classList.add('active');
-            }
-         });
-
-         // Update chat visibility
-         const roomChat = document.getElementById('chatlog');
-         roomChat.classList.toggle('hidden', chatId !== 'room');
-
-         document.querySelectorAll('.private-chat').forEach(chat => {
-            chat.classList.remove('active');
-         });
-
-         if (chatId === 'room') {
-            roomChat.classList.remove('hidden');
-         } else {
-            const otherUser = chatId.replace('private-', '');
-            document.getElementById(`private-chat-${otherUser}`).classList.add('active');
-         }
-      }
-
-      function replyToMessage(messageId, from, messageElement) {
-         const messageText = messageElement.getAttribute('data-message-text');
-
-         replyState.replyingTo = {
-            messageId,
-            from,
-            preview: messageText.substring(0, 30) + (messageText.length > 30 ? '...' : '')
-         };
-         replyState.replyingToRoom = state.currentRoom;
-
-         // Show replying indicator
-         const inputContainer = document.querySelector('.message-input-container');
-         let replyingDiv = inputContainer.querySelector('.replying-to');
-
-         if (!replyingDiv) {
-            replyingDiv = document.createElement('div');
-            replyingDiv.className = 'replying-to';
-            inputContainer.insertBefore(replyingDiv, inputContainer.firstChild);
-         }
-
-         replyingDiv.innerHTML = `
-            <span>Replying to ${from}: ${replyState.replyingTo.preview}</span>
-            <button class="cancel-reply" onclick="cancelReply()">
-               <span class="material-icons">close</span>
-            </button>
-         `;
-
-         // Focus the input field after clicking reply
-         document.getElementById('message_input').focus();
-      }
-
-      function cancelReply() {
-         replyState.replyingTo = null;
-         replyState.replyingToRoom = null;
-
-         const replyingDiv = document.querySelector('.replying-to');
-         if (replyingDiv) {
-            replyingDiv.remove();
-         }
-      }
-
-      function scrollToMessage(messageId) {
-         const message = document.getElementById(`message-${messageId}`);
-         if (message) {
-            message.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            message.style.backgroundColor = '#fff3cd';
-            setTimeout(() => {
-               message.style.backgroundColor = '';
-            }, 2000);
-         }
-      }
-
-      // Add these helper functions
-      function unbanUser(userId) {
-         socketio.emit('unban_user', {
-            userId,
-            room: state.currentRoom
-         });
-      }
-
-      function unkickUser(userId) {
-         socketio.emit('unkick_user', {
-            userId,
-            room: state.currentRoom
-         });
-      }
-
-      // Add event listeners after DOM content is loaded
-      document.addEventListener('DOMContentLoaded', function () {
-         document.getElementById('setNicknameBtn').addEventListener('click', setNickname);
-         document.getElementById('logoutBtn').addEventListener('click', logout);
-         document.getElementById('createRoomBtn').addEventListener('click', createRoom);
-         document.getElementById('sendMessageBtn').addEventListener('click', sendMessage);
-         document.getElementById('roomChatTab').addEventListener('click', () => switchChat('room'));
-      });
-   </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Application</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
 </head>
-
 <body>
-   <div id="nickname-form">
-      <div class="login-container">
-         <h2>Welcome to Chat</h2>
-         <p>Connect with others in real-time chat rooms</p>
-         <input type="text" id="nickname_input" placeholder="Enter your nickname">
-         <button id="setNicknameBtn">Join Chat</button>
-      </div>
-   </div>
+  <div id="nickname-form">
+    <div class="login-container">
+      <h2>Welcome to Chat</h2>
+      <p>Connect with others in real-time chat rooms</p>
+      <label for="nickname_input" class="sr-only">Enter your nickname</label>
+      <input type="text" id="nickname_input" placeholder="Enter your nickname" maxlength="30" autocomplete="off">
+      <button id="setNicknameBtn" aria-label="Join Chat">Join Chat</button>
+    </div>
+  </div>
 
-   <div id="chat-interface" class="hidden">
-      <div class="container">
-         <aside class="sidebar">
-            <header class="sidebar-header">
-               <span id="current_room">Current Room: None</span>
-               <button class="logout-btn" id="logoutBtn" title="Logout">
-                  <span class="material-icons">logout</span>
-               </button>
-            </header>
-            <div id="room_list"></div>
-            <div class="room-creation">
-               <input type="text" id="new_room_input" placeholder="New room name">
-               <input type="password" id="room_password" placeholder="Room password (optional)">
-               <button id="createRoomBtn">Create Room</button>
-            </div>
-            <div id="user_list"></div>
-            <div id="banned_users_list"></div>
-            <div id="kicked_users_list"></div>
-         </aside>
-         <main class="chat-container">
-            <nav class="chat-tabs" id="chat-tabs">
-               <div class="chat-tab active" data-chat="room" id="roomChatTab">Room Chat</div>
-            </nav>
-            <div id="chatlog" class="room-chat"></div>
-            <div id="private-chats"></div>
-            <div class="message-input-container">
-               <input type="text" id="message_input" placeholder="Type your message...">
-               <button id="sendMessageBtn" title="Send">
-                  <span class="material-icons">send</span>
-               </button>
-            </div>
-         </main>
+  <div id="chat-interface" class="hidden">
+    <div id="connection-status" class="connection-status" aria-live="polite">Connecting…</div>
+    <div id="toast-container" class="toast-container" aria-live="assertive"></div>
+
+    <div class="container">
+      <aside class="sidebar" id="sidebar">
+        <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+        <header class="sidebar-header">
+          <span id="current_room">Current Room: None</span>
+          <button class="logout-btn" id="logoutBtn" title="Logout" aria-label="Logout">
+            <span class="material-icons" aria-hidden="true">logout</span>
+          </button>
+        </header>
+        <div id="room_list" role="list" aria-label="Available Rooms"></div>
+        <div class="room-creation">
+          <label for="new_room_input" class="sr-only">New room name</label>
+          <input type="text" id="new_room_input" placeholder="New room name" maxlength="50" autocomplete="off">
+          <label for="room_password" class="sr-only">Room password (optional)</label>
+          <input type="password" id="room_password" placeholder="Room password (optional)" autocomplete="off">
+          <button id="createRoomBtn" aria-label="Create Room">Create Room</button>
+        </div>
+        <div id="user_list" role="list" aria-label="Users in Room"></div>
+        <div id="banned_users_list" role="list" aria-label="Banned Users"></div>
+        <div id="kicked_users_list" role="list" aria-label="Kicked Users"></div>
+      </aside>
+
+      <main class="chat-container">
+        <nav class="chat-tabs" id="chat-tabs" role="tablist" aria-label="Chat tabs">
+          <div class="chat-tab active" data-chat="room" id="roomChatTab" role="tab" tabindex="0" aria-selected="true">Room Chat</div>
+        </nav>
+        <div id="chatlog" class="room-chat" role="log" aria-live="polite" aria-label="Room messages">
+          <button id="scroll-bottom-btn" class="scroll-bottom-btn hidden" aria-label="Scroll to bottom">↓</button>
+        </div>
+        <div id="private-chats"></div>
+        <div class="message-input-container">
+          <div id="typing-indicator" class="typing-indicator" aria-live="polite"></div>
+          <label for="message_input" class="sr-only">Type your message</label>
+          <textarea id="message_input" placeholder="Type your message…" rows="1" maxlength="2000" autocomplete="off"></textarea>
+          <button id="sendMessageBtn" title="Send" aria-label="Send message">
+            <span class="material-icons" aria-hidden="true">send</span>
+          </button>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="password-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <h3>Password Required</h3>
+      <p id="password-modal-room"></p>
+      <label for="password-modal-input" class="sr-only">Enter room password</label>
+      <input type="password" id="password-modal-input" placeholder="Enter room password" autocomplete="off">
+      <div class="modal-buttons">
+        <button id="password-modal-submit" class="btn-primary">Join</button>
+        <button id="password-modal-cancel" class="btn-secondary">Cancel</button>
       </div>
-   </div>
+    </div>
+  </div>
+
+  <div id="confirm-dialog" class="modal-overlay hidden">
+    <div class="modal-content modal-sm">
+      <p id="confirm-dialog-text"></p>
+      <div class="modal-buttons">
+        <button id="confirm-dialog-yes" class="btn-danger">Yes</button>
+        <button id="confirm-dialog-no" class="btn-secondary">No</button>
+      </div>
+    </div>
+  </div>
 </body>
-
 </html>
