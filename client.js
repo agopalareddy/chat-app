@@ -269,7 +269,9 @@ function appendPrivateMessage(user, data) {
 // ── UI Toggle ───────────────────────────────────────────
 function toggleVisibility(id, show) {
     const el = document.getElementById(id);
-    if (el) el.style.display = show ? 'block' : 'none';
+    if (!el) return;
+    if (show) el.classList.remove('hidden');
+    else el.classList.add('hidden');
 }
 
 // ── Chat switching ──────────────────────────────────────
