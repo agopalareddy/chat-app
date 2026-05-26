@@ -49,12 +49,12 @@
 ### Directory Structure
 ```
 chat-app/
-└── socketio-chat-app/
-    ├── chat-server.js   # Core Express and Socket.IO server execution (Port 3456)
-    ├── client.html      # Front-end layout and static accessibility-compliant elements
-    ├── client.js        # DOM renderers, Event listeners, socket connections
-    ├── style.css        # Responsive slate layout styling and modal designs
-    └── package.json     # Node scripts and package dependencies listing
+├── chat-server.js   # Core Express and Socket.IO server execution (Port 3456)
+├── client.html      # Front-end layout and static accessibility-compliant elements
+├── client.js        # DOM renderers, Event listeners, socket connections
+├── style.css        # Responsive slate layout styling and modal designs
+├── package.json     # Node scripts and package dependencies listing
+└── pnpm-lock.yaml   # pnpm lockfile
 ```
 
 ### Socket.IO Event Protocol
@@ -67,14 +67,14 @@ chat-app/
 
 ### Prerequisites
 * **Node.js** >= 18.x
-* **npm** >= 9.x
+* **pnpm** >= 9.x
 
 ### Installation
 1. **Clone the Repository & Install Dependencies**:
    ```bash
-   git clone https://github.com/agopalareddy/tales-we-weave.git # (Sub-repository path: chat-app/socketio-chat-app)
-   cd chat-app/socketio-chat-app
-   npm install
+   git clone https://github.com/agopalareddy/tales-we-weave.git # (Sub-repository path: chat-app)
+   cd chat-app
+   pnpm install
    ```
 
 2. **Configure Environment Variables**:
@@ -90,12 +90,12 @@ chat-app/
 
 Start the Express and Socket.IO server:
 ```bash
-npm start
+pnpm start
 ```
 
 For rapid development with auto-rebuild and live-reload:
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Open `http://localhost:3456` in your web browser.
