@@ -5,15 +5,28 @@
   "main": "chat-server.js",
   "scripts": {
     "start": "node chat-server.js",
-    "dev": "nodemon chat-server.js"
+    "dev": "nodemon chat-server.js",
+    "format": "prettier --write .",
+    "prepare": "husky"
   },
-  "keywords": ["chat", "socket.io", "realtime", "messaging"],
+  "keywords": [
+    "chat",
+    "socket.io",
+    "realtime",
+    "messaging"
+  ],
   "dependencies": {
     "socket.io": "^4.8.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "nodemon": "^3.1.0",
+    "prettier": "^3.8.3"
+  },
+  "lint-staged": {
+    "*.{html,css,js,json,md}": "prettier --write"
   },
   "author": "",
   "license": "ISC"

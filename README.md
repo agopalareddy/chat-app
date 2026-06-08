@@ -31,7 +31,7 @@
 - **🗑️ Granular Message Deletion:** Users can instantly delete their own messages, while room creators maintain moderation overrides to delete any message in their room.
 - **🛡️ Administrative Moderation:** Empower room creators to kick (temporarily time-out) or permanently ban problematic users, with full unkick/unban support.
 - **✍️ Typing & Presence Indicators:** Dynamic typing alerts showing who is active, complemented by real-time green online presence dots.
-- **📶 Connection Status Bar:** A premium, real-time visual indicator displaying current connection status (*Connected*, *Reconnecting*, *Disconnected*).
+- **📶 Connection Status Bar:** A premium, real-time visual indicator displaying current connection status (_Connected_, _Reconnecting_, _Disconnected_).
 - **🔔 Toast & Audio Notifications:** Non-blocking in-app alert banners paired with subtle acoustic beeps for incoming messages when the browser tab is inactive.
 - **🎨 Nickname Personalization:** Each user receives a unique, deterministic HSL color assigned to their nickname for rapid visual identification.
 - **✨ Rich Text & Emoji Shortcodes:** Automatic replacement of emoji text patterns (e.g. `:)` → 😊, `:fire:` → 🔥) and regex-driven auto-linking for clickable URLs.
@@ -41,12 +41,14 @@
 ## 🛠️ Tech Stack & Architecture
 
 ### Technology Stack
+
 - **Frontend Core**: Vanilla HTML5, ES6 ECMAScript (Socket.IO client, coordinator pattern, dynamic DOM updates)
 - **Backend API & Server**: Node.js & Express (Static resource routing, health checks)
 - **Real-Time Communication**: Socket.IO 4.x (WebSockets with engine.io fallback polling)
 - **Styling System**: CSS Variables (Slate-dark palette, responsive layouts, modular layouts)
 
 ### Directory Structure
+
 ```
 chat-app/
 ├── chat-server.js   # Core Express and Socket.IO server execution (Port 3456)
@@ -58,6 +60,7 @@ chat-app/
 ```
 
 ### Socket.IO Event Protocol
+
 - **Client ➡️ Server**: `set_nickname`, `message_to_server`, `create_room`, `join_room`, `delete_room`, `kick_user`, `ban_user`, `unban_user`, `unkick_user`, `private_message`, `delete_message`, `open_private_chat`, `typing_start`, `typing_stop`
 - **Server ➡️ Client**: `nickname_set`, `message_to_client`, `update_rooms`, `update_users`, `join_room_success`, `private_message`, `private_chat_history`, `error_message`, `kicked`, `banned`, `force_join`, `room_deleted`, `message_deleted`, `typing_indicator`, `user_online`, `user_offline`, `unread_count`
 
@@ -66,11 +69,14 @@ chat-app/
 ## ⚙️ Setup & Local Installation
 
 ### Prerequisites
-* **Node.js** >= 18.x
-* **pnpm** >= 9.x
+
+- **Node.js** >= 18.x
+- **pnpm** >= 9.x
 
 ### Installation
+
 1. **Clone the Repository & Install Dependencies**:
+
    ```bash
    git clone https://github.com/agopalareddy/tales-we-weave.git # (Sub-repository path: chat-app)
    cd chat-app
@@ -89,11 +95,13 @@ chat-app/
 ## 🚀 Run & Quick Start
 
 Start the Express and Socket.IO server:
+
 ```bash
 pnpm start
 ```
 
 For rapid development with auto-rebuild and live-reload:
+
 ```bash
 pnpm run dev
 ```
@@ -114,6 +122,7 @@ Open `http://localhost:3456` in your web browser.
 ## 🤝 Contributing & Support
 
 ### Contributions
+
 This application is part of the **CSE 503S: Rapid Prototyping and Creative Programming** workspace at Washington University in St. Louis. Issues and PRs are welcome!
 
 ---
